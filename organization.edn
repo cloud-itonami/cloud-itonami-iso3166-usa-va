@@ -1,3 +1,10 @@
 ;; Real-world organization location / contact.
 ;; :head-role is institutional title only — no personal names.
-{:ooyake-id "gov.usa.va", :official-url "https://www.va.gov/", :head-role "Secretary of Veterans Affairs", :head-role-note "institutional office title only; personal names of current office-holders are intentionally NOT stored", :contact-page "https://www.va.gov/contact-us/", :sourced-from "official public contact page", :hq {:last-verified "2026-07-10", :phone "1-800-698-2411", :line-en "810 Vermont Avenue NW, Washington, DC 20420", :line-local "810 Vermont Avenue NW, Washington, DC 20420", :postal-code "20420", :kind "headquarters", :provenance "https://www.va.gov/contact-us/", :sourcing "official-site-public", :country "usa"}}
+{:ooyake-id "gov.usa.va"
+  :official-url "https://www.va.gov/"
+  :head-role "Secretary of Veterans Affairs"
+  :head-role-note "institutional office title only; personal names of current office-holders are intentionally NOT stored"
+  :contact-page "https://www.va.gov/contact-us/"
+  :sourced-from "official public contact page"
+  :hq {:line-en "810 Vermont Avenue NW, Washington, DC 20420" :line-local "810 Vermont Avenue NW, Washington, DC 20420" :postal-code "20420" :country "usa" :kind "headquarters" :provenance "https://www.va.gov/contact-us/" :last-verified "2026-07-10" :sourcing "official-site-public" :phone "1-800-698-2411"}
+}
