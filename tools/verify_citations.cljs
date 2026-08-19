@@ -1,0 +1,198 @@
+#!/usr/bin/env nbb
+;; Live gate for `src/statute/facts.cljc`.
+;;
+;; Re-fetches the eCFR versioner structure API and checks, for every catalog
+;; entry and every absence `see-instead`, that walking `:statute/cfr-node` from
+;; the title root lands on a node whose `label_description` is byte-identical to
+;; the recorded `:statute/verified-label`.
+;;
+;; Why walk the tree rather than match the URL. Hierarchical CFR identifiers
+;; nest as substrings of one another (`819.70` is a prefix of `819.7001`), so a
+;; string match can succeed against the wrong node. Walking explicit
+;; [type identifier] steps cannot pass by accident.
+;;
+;; EVIDENCE FLOOR. This script refuses to report a pass it did not earn:
+;;   * exit 2 -- could not answer (network failure, unparseable catalog,
+;;               a title whose API endpoint is not declared). NOT a pass,
+;;               and deliberately neither 0 nor 1.
+;;   * exit 1 -- answered, and at least one citation is wrong.
+;;   * exit 0 -- answered, every citation checked, and `--min` was met.
+;; A run that checked zero citations is exit 2, never exit 0. "Nothing was
+;; checked" and "nothing was wrong" must not share an exit code.
+;;
+;; Usage:  nbb tools/verify_citations.cljs [--min N] [--quiet]
+
+(ns verify-citations
+  (:require [clojure.string :as str]
+            [clojure.edn :as edn]
+            ["fs" :as fs]
+            ["path" :as path]))
+
+(def argv (vec (drop 2 (js->clj js/process.argv))))
+(defn flag? [f] (boolean (some #{f} argv)))
+(defn flag-val [f default]
+  (let [i (.indexOf argv f)]
+    (if (neg? i) default (get argv (inc i) default))))
+
+(def quiet? (flag? "--quiet"))
+(def min-citations (js/parseInt (flag-val "--min" "14") 10))
+
+(defn say [& xs] (when-not quiet? (println (str/join " " xs))))
+(defn die [code & xs]
+  (binding [*print-fn* *print-err-fn*] (println (str/join " " xs)))
+  (js/process.exit code))
+
+;; ---------------------------------------------------------------- catalog ---
+;; facts.cljc is Clojure source, not EDN. Rather than depend on a reader that
+;; would have to evaluate `ns`/`defn` forms, pull the three literal maps out by
+;; locating their `(def ...)` heads and reading the first EDN form after each.
+
+(def facts-path
+  "Locate `src/statute/facts.cljc` by walking up from the working directory, so
+  the gate works whether it is invoked from the repo root or from `tools/`."
+  (let [rel (path/join "src" "statute" "facts.cljc")]
+    (loop [dir (js/process.cwd) hops 0]
+      (let [cand (path/join dir rel)]
+        (cond
+          (fs/existsSync cand) cand
+          (> hops 3) (die 2 "CANNOT-ANSWER: could not locate" rel
+                          "from working directory" (js/process.cwd))
+          :else (recur (path/dirname dir) (inc hops)))))))
+
+(defn- value-start
+  "Given source starting just after a `(def name`, return the index of the first
+  character of the value form, stepping over an optional docstring.
+
+  Scanning naively for the first `[` or `{` is wrong: these docstrings contain
+  bracket characters (`[type identifier]` appears in `catalog`'s), so the naive
+  scan lands inside the string and reads a malformed form. That failure is not
+  hypothetical -- it is the bug this function was written to fix."
+  [s]
+  (let [n (count s)]
+    (loop [i 0 in-string? false]
+      (if (>= i n)
+        nil
+        (let [c (nth s i)]
+          (cond
+            in-string? (cond
+                         (= c "\\") (recur (+ i 2) true)
+                         (= c "\"")  (recur (inc i) false)
+                         :else       (recur (inc i) true))
+            (= c "\"") (recur (inc i) true)
+            (contains? #{" " "\t" "\n" "\r" ","} c) (recur (inc i) false)
+            :else i))))))
+
+(defn read-form-after
+  "Read the value form of the `(def ...)` whose head is `marker`."
+  [src marker]
+  (let [i (.indexOf src marker)]
+    (when (neg? i) (die 2 "CANNOT-ANSWER: marker not found in facts.cljc:" marker))
+    (let [after (subs src (+ i (count marker)))
+          start (value-start after)]
+      (when (nil? start)
+        (die 2 "CANNOT-ANSWER: could not find the value form after" marker))
+      (try
+        (edn/read-string (subs after start))
+        (catch :default e
+          (die 2 "CANNOT-ANSWER: unreadable form after" marker "--" (.-message e)))))))
+
+(def src
+  (try (fs/readFileSync facts-path "utf8")
+       (catch :default e
+         (die 2 "CANNOT-ANSWER: cannot read" facts-path "--" (.-message e)))))
+
+(def api-endpoints (read-form-after src "(def ecfr-structure-api"))
+(def catalog       (read-form-after src "(def catalog"))
+(def absences      (read-form-after src "(def absences"))
+
+;; ------------------------------------------------------------------ fetch ---
+
+(defn fetch-json [url]
+  (-> (js/fetch url)
+      (.then (fn [r]
+               (if (.-ok r)
+                 (.json r)
+                 (die 2 "CANNOT-ANSWER: HTTP" (.-status r) "from" url))))
+      (.catch (fn [e] (die 2 "CANNOT-ANSWER: fetch failed for" url "--" (.-message e))))))
+
+(defn walk-node
+  "Descend `tree` following [[type identifier] ...]. Returns the node or nil."
+  [tree node-path]
+  (reduce (fn [cur [t i]]
+            (if (nil? cur)
+              (reduced nil)
+              (or (some (fn [c]
+                          (when (and (= (get c "type") t)
+                                     (= (get c "identifier") i))
+                            c))
+                        (get cur "children"))
+                  (reduced nil))))
+          tree
+          node-path))
+
+;; ------------------------------------------------------------------- main ---
+
+(defn targets
+  "Every [label node-path cfr-title] this run must confirm."
+  []
+  (concat
+   (for [[iso es] catalog, e es]
+     {:what (str iso " " (:statute/id e))
+      :title (:statute/cfr-title e)
+      :node (:statute/cfr-node e)
+      :label (:statute/verified-label e)})
+   (for [a absences
+         :let [s (:absence/see-instead a)]
+         :when s]
+     {:what (str "absence " (:absence/id a) " see-instead")
+      :title (:statute/cfr-title s)
+      :node (:statute/cfr-node s)
+      :label (:statute/verified-label s)})))
+
+(defn -main []
+  (let [ts (targets)]
+    (when (empty? ts)
+      (die 2 "CANNOT-ANSWER: catalog parsed but yielded zero citations."
+           "Refusing to report a pass."))
+    (let [titles (distinct (map :title ts))]
+      (doseq [t titles]
+        (when-not (get api-endpoints t)
+          (die 2 "CANNOT-ANSWER: no declared API endpoint for CFR title" t)))
+      (-> (js/Promise.all
+           (clj->js (map (fn [t] (.then (fetch-json (get api-endpoints t))
+                                        #(vector t %)))
+                         titles)))
+          (.then
+           (fn [pairs]
+             (let [trees (into {} (map (fn [[t tree]] [t (js->clj tree)]) (js->clj pairs)))
+                   results
+                   (doall
+                    (for [{:keys [what title node label]} ts]
+                      (let [n (walk-node (get trees title) node)
+                            got (when n (get n "label_description"))]
+                        (cond
+                          (nil? n)      {:ok false :what what :why (str "node path did not resolve: "
+                                                                       (pr-str node))}
+                          (not= got label) {:ok false :what what
+                                            :why (str "label drift\n     recorded: " (pr-str label)
+                                                      "\n     live:     " (pr-str got))}
+                          :else {:ok true :what what}))))
+                   bad (remove :ok results)
+                   n   (count results)]
+               (say (str "CHECKED\t" n))
+               (doseq [r results]
+                 (when-not (:ok r) (say "  FAIL " (:what r) "--" (:why r))))
+               (cond
+                 (seq bad)
+                 (die 1 (str "FAIL: " (count bad) " of " n " citations wrong."))
+
+                 (< n min-citations)
+                 (die 2 (str "CANNOT-ANSWER: only " n " citations checked, below --min "
+                             min-citations ". A shrunken catalog must not pass silently."))
+
+                 :else
+                 (do (say (str "OK\t" n " citations confirmed byte-exact against the live eCFR API."))
+                     (js/process.exit 0)))))))))
+  nil)
+
+(-main)

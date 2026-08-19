@@ -1,0 +1,375 @@
+(ns statute.facts
+  "Agency-level compliance catalog for **USA-VA** (United States Department of
+  Veterans Affairs) -- the spec-basis behind this leaf's blueprint claim that an
+  independent operator can run a veterans-procurement compliance service.
+
+  Scope. This is the VA-specific layer only. Government-wide U.S. federal
+  statutes (Sarbanes-Oxley, FLSA, ...) live in the country coordinator
+  `cloud-itonami-iso3166-usa`'s `statute.facts` and are NOT duplicated here;
+  the two catalogs compose, keyed `USA-VA` -> `USA`. Sibling agency leaves
+  (`USA-SBA`, `USA-FTC`, `USA-DOE`) hold their own chapters; where the two
+  overlap, see `absences` below -- the overlap with SBA is the whole story.
+
+  Provenance. Every entry cites the official eCFR (Electronic Code of Federal
+  Regulations, GPO/Office of the Federal Register) address for the smallest
+  stable unit that was independently confirmed. Nothing here is fabricated:
+  each `:statute/verified-label` below is the byte-exact `label_description`
+  returned by the eCFR versioner API on `:statute/verified-at`, and
+  `tools/verify_citations.cljs` re-fetches that API and fails if any label
+  drifts.
+
+  Why the citation and the verification URL differ. `:statute/url` is the
+  canonical human address a person should open. It is deliberately NOT the
+  URL that was machine-verified: fetching www.ecfr.gov from an automated
+  client returns HTTP 200 with a `Federal Register :: Request Access`
+  interstitial rather than the regulation, so a status-code check against it
+  would report success while proving nothing. We therefore verify through the
+  documented machine API (`:statute/verified-via`) and record both. Do not
+  `curl` the `:statute/url` and treat a 200 as confirmation -- it is not.
+
+  THE TRAP THIS CATALOG EXISTS TO PIN DOWN. **The VA no longer certifies
+  veteran-owned small businesses, but 38 CFR part 74 -- titled `Veterans Small
+  Business Regulations` -- is still on the books, unreserved, and still reads
+  as though it were operative.** Its sections still ask `How does CVE process
+  applications for VIP Verification Program?` and still describe where an
+  applicant must file. The Center for Verification and Evaluation (CVE) and its
+  Vendor Information Pages (VIP) program are how the VA used to verify
+  SDVOSB/VOSB status. Section 862 of the FY2021 NDAA (Pub. L. 116-283) moved
+  that certification to the Small Business Administration, effective
+  2023-01-01; the certifying authority is now SBA's **13 CFR part 128**
+  (`Veteran Small Business Certification Program`). An operator who reads
+  38 CFR 74 -- or who greps the CFR for `veteran` and `verification` -- can
+  very reasonably conclude the VA still runs a certification path. It does
+  not. Both sides are cited here with their live labels, and `absences` below
+  carries the negative record with a `:absence/see-instead` so the operator
+  lands on the rule that actually governs.
+
+  Note the residue in the VAAR itself: 48 CFR 819.7008 is still titled
+  `Sole source awards to verified service-disabled veteran-owned small
+  businesses` -- `verified` being the legacy CVE term of art. The word
+  surviving in a section heading is exactly why this catalog records labels
+  byte-exactly rather than paraphrasing them.
+
+  What the VA does still own. Unlike SBA -- which has no acquisition-regulation
+  chapter at all -- the VA **is** a FAR-supplement agency: 48 CFR chapter 8 is
+  the VA Acquisition Regulation (VAAR), and subpart 819.70 is `The VA Veterans
+  First Contracting Program`, the VA-specific procurement preference. Set-aside
+  and sole-source procedure, the contracting order of priority, and the
+  limitations-on-subcontracting compliance requirements are VA rules. What
+  moved to SBA is who says a firm is eligible, not how the VA buys.
+
+  Extending. A regulation not in this table has NO spec-basis, full stop.
+  Extend `catalog` with a real, API-confirmed citation; never invent an id,
+  a URL, or a label."
+  (:require [clojure.string :as str]))
+
+(def ecfr-structure-api
+  "eCFR versioner structure endpoints these entries were verified against.
+  Keyed by CFR title. The date is the title's `up_to_date_as_of` at
+  verification time, so the call is reproducible rather than `current`."
+  {13 "https://www.ecfr.gov/api/versioner/v1/structure/2026-08-17/title-13.json"
+   38 "https://www.ecfr.gov/api/versioner/v1/structure/2026-08-17/title-38.json"
+   48 "https://www.ecfr.gov/api/versioner/v1/structure/2026-08-17/title-48.json"})
+
+(def catalog
+  "iso3166 code -> vector of regulation entries.
+
+  `USA-VA` is an agency-level key (parent `USA`), matching `blueprint.edn`'s
+  `:itonami.blueprint/iso3166`.
+
+  `:statute/cfr-node` is the path from the CFR title down to the cited node,
+  as [type identifier] pairs. The live gate walks the eCFR structure tree by
+  this path -- it does not string-match the URL, because hierarchical
+  identifiers nest as substrings of one another (`part 74` is a prefix of
+  `part 749` were one to exist, and `819.70` is a prefix of `819.7001`). Walking
+  the tree by explicit [type identifier] steps is the only check that cannot
+  pass by accident."
+  {"USA-VA"
+   [{:statute/id            :va/vip-verification-part
+     :statute/topic         #{:sdvosb :vosb :certification :legacy-trap}
+     :statute/title         "38 CFR Part 74 -- Veterans Small Business Regulations"
+     :statute/cfr-title     38
+     :statute/cfr-node      [["chapter" "I"] ["part" "74"]]
+     :statute/url           "https://www.ecfr.gov/current/title-38/chapter-I/part-74"
+     :statute/verified-label "Veterans Small Business Regulations"
+     :statute/verified-via  "https://www.ecfr.gov/api/versioner/v1/structure/2026-08-17/title-38.json"
+     :statute/verified-at   "2026-08-19"
+     :statute/status        :stale-on-its-face
+     :statute/note
+     "STILL ON THE BOOKS, NOT RESERVED, AND NO LONGER THE CERTIFICATION PATH.
+      Certification moved to SBA (13 CFR 128) on 2023-01-01 per FY2021 NDAA
+      s.862. Do not route an applicant here. See `absences`."}
+
+    {:statute/id            :va/vip-definitions
+     :statute/topic         #{:sdvosb :vosb :certification :legacy-trap}
+     :statute/title         "38 CFR 74.1 -- VIP Verification Program definitions"
+     :statute/cfr-title     38
+     :statute/cfr-node      [["chapter" "I"] ["part" "74"]
+                             ["subject_group" "ECFR5024bf7bde00dd1"] ["section" "74.1"]]
+     :statute/url           "https://www.ecfr.gov/current/title-38/chapter-I/part-74/section-74.1"
+     :statute/verified-label "What definitions are important for Vendor Information Pages (VIP) Verification Program?"
+     :statute/verified-via  "https://www.ecfr.gov/api/versioner/v1/structure/2026-08-17/title-38.json"
+     :statute/verified-at   "2026-08-19"
+     :statute/status        :stale-on-its-face
+     :statute/note
+     "The live heading still names the VIP Verification Program in the present
+      tense. Cited byte-exactly because the staleness IS the finding."}
+
+    {:statute/id            :va/vip-eligibility
+     :statute/topic         #{:sdvosb :vosb :certification :legacy-trap}
+     :statute/title         "38 CFR 74.2 -- VIP Verification Program eligibility"
+     :statute/cfr-title     38
+     :statute/cfr-node      [["chapter" "I"] ["part" "74"]
+                             ["subject_group" "ECFR5024bf7bde00dd1"] ["section" "74.2"]]
+     :statute/url           "https://www.ecfr.gov/current/title-38/chapter-I/part-74/section-74.2"
+     :statute/verified-label "What are the eligibility requirements a concern must meet for the VIP Verification Program?"
+     :statute/verified-via  "https://www.ecfr.gov/api/versioner/v1/structure/2026-08-17/title-38.json"
+     :statute/verified-at   "2026-08-19"
+     :statute/status        :stale-on-its-face
+     :statute/note
+     "Eligibility criteria that no longer confer certification. The operative
+      eligibility rule is 13 CFR 128."}
+
+    {:statute/id            :va/vip-application-processing
+     :statute/topic         #{:sdvosb :vosb :certification :legacy-trap}
+     :statute/title         "38 CFR 74.11 -- CVE application processing"
+     :statute/cfr-title     38
+     :statute/cfr-node      [["chapter" "I"] ["part" "74"]
+                             ["subject_group" "ECFR47b26a5b9966d7c"] ["section" "74.11"]]
+     :statute/url           "https://www.ecfr.gov/current/title-38/chapter-I/part-74/section-74.11"
+     :statute/verified-label "How does CVE process applications for VIP Verification Program?"
+     :statute/verified-via  "https://www.ecfr.gov/api/versioner/v1/structure/2026-08-17/title-38.json"
+     :statute/verified-at   "2026-08-19"
+     :statute/status        :stale-on-its-face
+     :statute/note
+     "Names CVE -- an office that no longer performs this function -- as the
+      processor. The sharpest single artifact of the un-repealed part."}
+
+    {:statute/id            :va/information-security
+     :statute/topic         #{:infosec :contractor-obligations}
+     :statute/title         "38 CFR Part 75 -- Information Security Matters"
+     :statute/cfr-title     38
+     :statute/cfr-node      [["chapter" "I"] ["part" "75"]]
+     :statute/url           "https://www.ecfr.gov/current/title-38/chapter-I/part-75"
+     :statute/verified-label "Information Security Matters"
+     :statute/verified-via  "https://www.ecfr.gov/api/versioner/v1/structure/2026-08-17/title-38.json"
+     :statute/verified-at   "2026-08-19"
+     :statute/status        :operative
+     :statute/note
+     "Data-breach and security obligations reaching contractors that handle VA
+      sensitive personal information."}
+
+    {:statute/id            :va/vaar-system
+     :statute/topic         #{:procurement :vaar}
+     :statute/title         "48 CFR Part 801 -- VA Acquisition Regulation System"
+     :statute/cfr-title     48
+     :statute/cfr-node      [["chapter" "8"] ["subchapter" "A"] ["part" "801"]]
+     :statute/url           "https://www.ecfr.gov/current/title-48/chapter-8/subchapter-A/part-801"
+     :statute/verified-label "Department of Veterans Affairs Acquisition Regulation System"
+     :statute/verified-via  "https://www.ecfr.gov/api/versioner/v1/structure/2026-08-17/title-48.json"
+     :statute/verified-at   "2026-08-19"
+     :statute/status        :operative
+     :statute/note
+     "Establishes the VAAR as a FAR supplement. Contrast USA-SBA, which has no
+      48 CFR chapter at all."}
+
+    {:statute/id            :va/vaar-definitions
+     :statute/topic         #{:procurement :vaar :definitions}
+     :statute/title         "48 CFR Part 802 -- Definitions of Words and Terms"
+     :statute/cfr-title     48
+     :statute/cfr-node      [["chapter" "8"] ["subchapter" "A"] ["part" "802"]]
+     :statute/url           "https://www.ecfr.gov/current/title-48/chapter-8/subchapter-A/part-802"
+     :statute/verified-label "Definitions of Words and Terms"
+     :statute/verified-via  "https://www.ecfr.gov/api/versioner/v1/structure/2026-08-17/title-48.json"
+     :statute/verified-at   "2026-08-19"
+     :statute/status        :operative
+     :statute/note
+     "VAAR-specific definitions; read before relying on any VAAR term of art,
+      several of which predate the SBA certification transfer."}
+
+    {:statute/id            :va/vaar-small-business
+     :statute/topic         #{:procurement :small-business :vaar}
+     :statute/title         "48 CFR Part 819 -- Small Business Programs"
+     :statute/cfr-title     48
+     :statute/cfr-node      [["chapter" "8"] ["subchapter" "D"] ["part" "819"]]
+     :statute/url           "https://www.ecfr.gov/current/title-48/chapter-8/subchapter-D/part-819"
+     :statute/verified-label "Small Business Programs"
+     :statute/verified-via  "https://www.ecfr.gov/api/versioner/v1/structure/2026-08-17/title-48.json"
+     :statute/verified-at   "2026-08-19"
+     :statute/status        :operative}
+
+    {:statute/id            :va/veterans-first
+     :statute/topic         #{:procurement :sdvosb :vosb :set-aside :veterans-first}
+     :statute/title         "48 CFR Subpart 819.70 -- The VA Veterans First Contracting Program"
+     :statute/cfr-title     48
+     :statute/cfr-node      [["chapter" "8"] ["subchapter" "D"] ["part" "819"]
+                             ["subpart" "819.70"]]
+     :statute/url           "https://www.ecfr.gov/current/title-48/chapter-8/subchapter-D/part-819/subpart-819.70"
+     :statute/verified-label "The VA Veterans First Contracting Program"
+     :statute/verified-via  "https://www.ecfr.gov/api/versioner/v1/structure/2026-08-17/title-48.json"
+     :statute/verified-at   "2026-08-19"
+     :statute/status        :operative
+     :statute/note
+     "The core of this leaf's blueprint claim. The VA-specific procurement
+      preference; survives the certification transfer intact."}
+
+    {:statute/id            :va/veterans-first-eligibility
+     :statute/topic         #{:procurement :sdvosb :vosb :eligibility :veterans-first}
+     :statute/title         "48 CFR 819.7003 -- Eligibility"
+     :statute/cfr-title     48
+     :statute/cfr-node      [["chapter" "8"] ["subchapter" "D"] ["part" "819"]
+                             ["subpart" "819.70"] ["section" "819.7003"]]
+     :statute/url           "https://www.ecfr.gov/current/title-48/chapter-8/subchapter-D/part-819/subpart-819.70/section-819.7003"
+     :statute/verified-label "Eligibility."
+     :statute/verified-via  "https://www.ecfr.gov/api/versioner/v1/structure/2026-08-17/title-48.json"
+     :statute/verified-at   "2026-08-19"
+     :statute/status        :operative
+     :statute/note
+     "The seam between the two regimes: the VA sets who may receive a Veterans
+      First award, while SBA (13 CFR 128) decides who is certified. Read both."}
+
+    {:statute/id            :va/contracting-order-of-priority
+     :statute/topic         #{:procurement :set-aside :veterans-first}
+     :statute/title         "48 CFR 819.7005 -- Contracting order of priority"
+     :statute/cfr-title     48
+     :statute/cfr-node      [["chapter" "8"] ["subchapter" "D"] ["part" "819"]
+                             ["subpart" "819.70"] ["section" "819.7005"]]
+     :statute/url           "https://www.ecfr.gov/current/title-48/chapter-8/subchapter-D/part-819/subpart-819.70/section-819.7005"
+     :statute/verified-label "Contracting order of priority."
+     :statute/verified-via  "https://www.ecfr.gov/api/versioner/v1/structure/2026-08-17/title-48.json"
+     :statute/verified-at   "2026-08-19"
+     :statute/status        :operative
+     :statute/note
+     "The VA's ordered preference cascade -- the rule a compliance service is
+      most often asked to apply."}
+
+    {:statute/id            :va/sdvosb-set-aside-procedures
+     :statute/topic         #{:procurement :sdvosb :set-aside}
+     :statute/title         "48 CFR 819.7006 -- VA SDVOSB set-aside procedures"
+     :statute/cfr-title     48
+     :statute/cfr-node      [["chapter" "8"] ["subchapter" "D"] ["part" "819"]
+                             ["subpart" "819.70"] ["section" "819.7006"]]
+     :statute/url           "https://www.ecfr.gov/current/title-48/chapter-8/subchapter-D/part-819/subpart-819.70/section-819.7006"
+     :statute/verified-label "VA service-disabled veteran-owned small business set-aside procedures."
+     :statute/verified-via  "https://www.ecfr.gov/api/versioner/v1/structure/2026-08-17/title-48.json"
+     :statute/verified-at   "2026-08-19"
+     :statute/status        :operative}
+
+    {:statute/id            :va/sdvosb-sole-source
+     :statute/topic         #{:procurement :sdvosb :sole-source :legacy-trap}
+     :statute/title         "48 CFR 819.7008 -- Sole source awards to verified SDVOSBs"
+     :statute/cfr-title     48
+     :statute/cfr-node      [["chapter" "8"] ["subchapter" "D"] ["part" "819"]
+                             ["subpart" "819.70"] ["section" "819.7008"]]
+     :statute/url           "https://www.ecfr.gov/current/title-48/chapter-8/subchapter-D/part-819/subpart-819.70/section-819.7008"
+     :statute/verified-label "Sole source awards to verified service-disabled veteran-owned small businesses."
+     :statute/verified-via  "https://www.ecfr.gov/api/versioner/v1/structure/2026-08-17/title-48.json"
+     :statute/verified-at   "2026-08-19"
+     :statute/status        :operative
+     :statute/note
+     "`verified` here is the legacy CVE term surviving in an operative section
+      heading. The award rule is live; the word is a fossil. Cited byte-exactly
+      so a later edit that quietly rewords it is caught."}
+
+    {:statute/id            :va/vaar-clauses
+     :statute/topic         #{:procurement :clauses :vaar}
+     :statute/title         "48 CFR Part 852 -- Solicitation Provisions and Contract Clauses"
+     :statute/cfr-title     48
+     :statute/cfr-node      [["chapter" "8"] ["subchapter" "H"] ["part" "852"]]
+     :statute/url           "https://www.ecfr.gov/current/title-48/chapter-8/subchapter-H/part-852"
+     :statute/verified-label "Solicitation Provisions and Contract Clauses"
+     :statute/verified-via  "https://www.ecfr.gov/api/versioner/v1/structure/2026-08-17/title-48.json"
+     :statute/verified-at   "2026-08-19"
+     :statute/status        :operative
+     :statute/note
+     "Where the VAAR's actual clause text lives, including the Veterans First
+      limitations-on-subcontracting clauses a bidder must flow down."}
+
+    {:statute/id            :va/veterans-services-cost-principles
+     :statute/topic         #{:procurement :cost-principles}
+     :statute/title         "48 CFR Subpart 831.70 -- Cost principles for Veterans Services"
+     :statute/cfr-title     48
+     :statute/cfr-node      [["chapter" "8"] ["subchapter" "E"] ["part" "831"]
+                             ["subpart" "831.70"]]
+     :statute/url           "https://www.ecfr.gov/current/title-48/chapter-8/subchapter-E/part-831/subpart-831.70"
+     :statute/verified-label "Contract Cost Principles and Procedures for Veterans Services"
+     :statute/verified-via  "https://www.ecfr.gov/api/versioner/v1/structure/2026-08-17/title-48.json"
+     :statute/verified-at   "2026-08-19"
+     :statute/status        :operative}]})
+
+(def absences
+  "Checked NEGATIVES. An absence is a finding, not a gap in the catalog: each
+  entry below was looked for and confirmed not to exist in the stated place,
+  and carries the address that governs instead.
+
+  These are the most valuable records here, because a missing rule is
+  indistinguishable from an unsearched one unless somebody writes down that
+  they searched."
+  [{:absence/id          :va/no-current-certification-authority
+    :absence/claim       "The VA certifies SDVOSB/VOSB firms under 38 CFR part 74."
+    :absence/holds?      false
+    :absence/checked-at  "2026-08-19"
+    :absence/checked-via "https://www.ecfr.gov/api/versioner/v1/structure/2026-08-17/title-13.json"
+    :absence/see-instead
+    {:statute/title          "13 CFR Part 128 -- Veteran Small Business Certification Program"
+     :statute/cfr-title      13
+     :statute/cfr-node       [["chapter" "I"] ["part" "128"]]
+     :statute/url            "https://www.ecfr.gov/current/title-13/chapter-I/part-128"
+     :statute/verified-label "Veteran Small Business Certification Program"}
+    :absence/note
+    "38 CFR 74 exists and is NOT reserved -- so an existence check against it
+     succeeds and proves the wrong thing. Certification moved to SBA effective
+     2023-01-01 (FY2021 NDAA s.862). The negative recorded here is not `part 74
+     is missing`; it is `part 74 is no longer the certification authority`. Those
+     differ, and only the second is true."}
+
+   {:absence/id          :va/no-va-certification-part-in-13-cfr
+    :absence/claim       "SBA's veteran certification rules live in 13 CFR part 125."
+    :absence/holds?      false
+    :absence/checked-at  "2026-08-19"
+    :absence/checked-via "https://www.ecfr.gov/api/versioner/v1/structure/2026-08-17/title-13.json"
+    :absence/see-instead
+    {:statute/title          "13 CFR Part 128 -- Veteran Small Business Certification Program"
+     :statute/cfr-title      13
+     :statute/cfr-node       [["chapter" "I"] ["part" "128"]]
+     :statute/url            "https://www.ecfr.gov/current/title-13/chapter-I/part-128"
+     :statute/verified-label "Veteran Small Business Certification Program"}
+    :absence/note
+    "13 CFR 125 is real -- its live label is `Government Contracting Programs` --
+     but it is not the certification part; it keeps limitations on
+     subcontracting, joint ventures, and mentor-protege. Pre-2023 guidance that
+     cites 125 for certification is citing the wrong part. The sibling leaf
+     USA-SBA pins this same trap from the SBA side."}])
+
+(defn entries
+  "All catalog entries for an iso3166 code. Returns [] for an unknown code --
+  callers must not treat an unknown jurisdiction as an empty-but-valid one."
+  [iso]
+  (get catalog iso []))
+
+(defn by-topic
+  "Entries under `iso` carrying `topic`."
+  [iso topic]
+  (filterv #(contains? (:statute/topic %) topic) (entries iso)))
+
+(defn legacy-traps
+  "Entries whose live text reads as operative but is not, plus the operative
+  entries carrying legacy wording. These are the entries a compliance answer
+  must never cite without also citing `absences`."
+  [iso]
+  (filterv #(contains? (:statute/topic %) :legacy-trap) (entries iso)))
+
+(defn citation-count
+  "Number of catalog entries under `iso`."
+  [iso]
+  (count (entries iso)))
+
+(defn- node->str [node]
+  (str/join " > " (map (fn [[t i]] (str t ":" i)) node)))
+
+(defn describe
+  "Human-readable one-line rendering of an entry, for operator output."
+  [e]
+  (str (:statute/title e)
+       " [" (name (:statute/status e)) "]"
+       " (" (node->str (:statute/cfr-node e)) ")"))
