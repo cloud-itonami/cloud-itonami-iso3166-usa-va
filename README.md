@@ -46,8 +46,8 @@ the VA buys*.
 ### Verifying
 
 ```bash
-nbb tools/verify_citations.cljk     # live: re-fetches the official eCFR API
-clojure -M:test                     # offline: shape + the substantive claims
+kbb --backend sci tools/verify_citations.cljk     # live: re-fetches the official eCFR API
+kbb -M:test                     # offline: shape + the substantive claims
 ```
 
 The live gate walks the eCFR structure tree by explicit `[type identifier]`
