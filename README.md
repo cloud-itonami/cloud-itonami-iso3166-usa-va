@@ -19,7 +19,7 @@ navigating **Department of Veterans Affairs**-specific public-procurement / regu
 
 ## Regulatory citations
 
-`src/statute/facts.cljc` carries **15 citations** into the VA's own corpus --
+`src/statute/facts.cljk` carries **15 citations** into the VA's own corpus --
 38 CFR chapter I (the VA's chapter) and 48 CFR chapter 8 (the VA Acquisition
 Regulation, VAAR) -- plus **2 checked absences**. Every entry records the
 byte-exact `label_description` the official eCFR versioner API returned, the
@@ -46,7 +46,7 @@ the VA buys*.
 ### Verifying
 
 ```bash
-nbb tools/verify_citations.cljs     # live: re-fetches the official eCFR API
+nbb tools/verify_citations.cljk     # live: re-fetches the official eCFR API
 clojure -M:test                     # offline: shape + the substantive claims
 ```
 
